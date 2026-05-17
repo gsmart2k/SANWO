@@ -1,0 +1,13 @@
+node_modules
+dist
+.env
+.env.local
+*.local
+.DS_Store
+
+# Server runtime data
+server/registry.json
+server/paystack_accounts.json
+
+# One-time setup scripts
+server/setup-treasury.ts
