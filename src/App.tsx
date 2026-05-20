@@ -40,7 +40,7 @@ function LoginScreen() {
       <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-10 max-w-md w-full mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <img src="/sanwo-logo.png" alt="SANWO" className="h-12 mb-4 object-contain" />
+          <img src="/sanwo-logo.png" alt="SANWO" className="h-14 mb-4 object-contain mx-auto" />
           <p className="text-slate-500 text-sm mt-1">USDC payments on Arc blockchain</p>
           <span className="mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
             Testnet
