@@ -14,12 +14,23 @@ export default function Sidebar() {
     <aside className="w-60 flex-shrink-0 bg-slate-900 flex flex-col h-full">
       {/* Brand */}
       <div className="px-5 py-6 border-b border-slate-800">
-        <div className="bg-white rounded-xl px-3 py-2 flex items-center justify-center mb-2">
-          <img src="/sanwo-logo.png" alt="SANWO" className="h-7 object-contain" />
+        <div className="flex items-center gap-3 mb-2">
+          <div
+            className="w-10 h-10 rounded-xl bg-white flex-shrink-0"
+            style={{
+              backgroundImage: "url('/sanwo-logo.png')",
+              backgroundSize: '260% auto',
+              backgroundPosition: 'left center',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+          <div>
+            <div className="text-white font-bold text-base leading-none">SANWO</div>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 mt-0.5">
+              Testnet
+            </span>
+          </div>
         </div>
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400">
-          Testnet
-        </span>
       </div>
 
       {/* Nav */}
