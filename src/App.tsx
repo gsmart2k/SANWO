@@ -40,10 +40,7 @@ function LoginScreen() {
       <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-10 max-w-md w-full mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mb-4">
-            <span className="text-white font-bold text-xl">S</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">SANWO</h1>
+          <img src="/sanwo-logo.png" alt="SANWO" className="h-12 mb-4 object-contain" />
           <p className="text-slate-500 text-sm mt-1">USDC payments on Arc blockchain</p>
           <span className="mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
             Testnet
