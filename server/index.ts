@@ -61,6 +61,8 @@ interface VaultRecord {
   unlockDate: string
   status: 'active' | 'unlocked' | 'withdrawn' | 'broken_early' | 'pending'
   penaltyPaid: boolean
+  withdrawnAt?: string
+  amountReturned?: string
 }
 
 interface VaultsDB {
@@ -749,6 +751,8 @@ app.post('/api/vault/withdraw/:vaultId', async (req, res) => {
     await transferFromVault(vault.vaultWalletId, vault.userAddress, returning.toString())
     vault.status = isEarly ? 'broken_early' : 'withdrawn'
     vault.penaltyPaid = isEarly
+    vault.withdrawnAt = new Date().toISOString()
+    vault.amountReturned = returning.toFixed(2)
     saveVaultsDB()
 
     res.json({

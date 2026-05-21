@@ -14,6 +14,8 @@ export interface Vault {
   unlockDate: string
   status: 'active' | 'unlocked' | 'withdrawn' | 'broken_early' | 'pending'
   penaltyPaid: boolean
+  withdrawnAt?: string
+  amountReturned?: string
 }
 
 export function useVault() {

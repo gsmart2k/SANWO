@@ -1,6 +1,9 @@
-import { RefreshCw, ExternalLink, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+import { RefreshCw, ExternalLink, ArrowUpRight, ArrowDownLeft, Lock, Unlock, PiggyBank } from 'lucide-react'
 import { useWallet, relativeTime } from '../context/WalletContext'
+import { useVault } from '../hooks/useVault'
 import { truncateAddress, EXPLORER_BASE } from '../lib/arcConfig'
+import type { Transaction } from '../context/WalletContext'
+import type { Vault } from '../hooks/useVault'
 
 const STATUS_COLORS = {
   confirmed: 'bg-green-50 text-green-700',
@@ -8,8 +11,152 @@ const STATUS_COLORS = {
   failed: 'bg-red-50 text-red-700',
 }
 
+// ── Unified activity types ────────────────────────────────────────────────────
+
+type TxActivity = { kind: 'tx'; data: Transaction }
+type VaultLock = { kind: 'vault_lock'; id: string; amount: string; timestamp: number }
+type VaultRelease = {
+  kind: 'vault_release'
+  id: string
+  amount: string
+  timestamp: number
+  penaltyPaid: boolean
+  broken: boolean
+}
+type Activity = TxActivity | VaultLock | VaultRelease
+
+function buildVaultActivities(vaults: Vault[]): Activity[] {
+  const activities: Activity[] = []
+
+  for (const vault of vaults) {
+    if (vault.status === 'pending') continue
+
+    activities.push({
+      kind: 'vault_lock',
+      id: `lock-${vault.id}`,
+      amount: vault.amount,
+      timestamp: Math.floor(new Date(vault.lockDate).getTime() / 1000),
+    })
+
+    if (vault.status === 'withdrawn' || vault.status === 'broken_early') {
+      activities.push({
+        kind: 'vault_release',
+        id: `release-${vault.id}`,
+        amount: vault.amountReturned ?? vault.amount,
+        timestamp: Math.floor(new Date(vault.withdrawnAt ?? vault.unlockDate).getTime() / 1000),
+        penaltyPaid: vault.penaltyPaid,
+        broken: vault.status === 'broken_early',
+      })
+    }
+  }
+
+  return activities
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function TxRow({ tx }: { tx: Transaction }) {
+  return (
+    <a
+      href={`${EXPLORER_BASE}/tx/${tx.hash}`}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors group"
+    >
+      <div
+        className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+          tx.direction === 'received' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
+        }`}
+      >
+        {tx.direction === 'received' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-slate-800 font-mono">
+          {tx.direction === 'received' ? truncateAddress(tx.from) : truncateAddress(tx.to)}
+        </div>
+        <div className="text-xs text-slate-400 mt-0.5">{relativeTime(tx.timestamp)}</div>
+      </div>
+
+      <div className="text-right flex-shrink-0">
+        <div className={`text-sm font-semibold ${tx.direction === 'received' ? 'text-green-600' : 'text-red-500'}`}>
+          {tx.direction === 'received' ? '+' : '-'}{tx.amount} USDC
+        </div>
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${STATUS_COLORS[tx.status]}`}>
+          {tx.status}
+        </span>
+      </div>
+
+      <ExternalLink size={13} className="text-slate-300 group-hover:text-slate-400 flex-shrink-0 transition-colors" />
+    </a>
+  )
+}
+
+function VaultLockRow({ activity }: { activity: VaultLock }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-4">
+      <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+        <Lock size={15} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-slate-800">Vault Locked</div>
+        <div className="text-xs text-slate-400 mt-0.5">
+          <span className="inline-flex items-center gap-1">
+            <PiggyBank size={10} /> Sanwo Vault · {relativeTime(activity.timestamp)}
+          </span>
+        </div>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <div className="text-sm font-semibold text-blue-600">−{activity.amount} USDC</div>
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">locked</span>
+      </div>
+    </div>
+  )
+}
+
+function VaultReleaseRow({ activity }: { activity: VaultRelease }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-4">
+      <div className="w-9 h-9 rounded-full bg-green-50 text-green-600 flex items-center justify-center flex-shrink-0">
+        <Unlock size={15} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-slate-800">
+          {activity.broken ? 'Vault Broken Early' : 'Vault Released'}
+        </div>
+        <div className="text-xs text-slate-400 mt-0.5">
+          <span className="inline-flex items-center gap-1">
+            <PiggyBank size={10} /> Sanwo Vault · {relativeTime(activity.timestamp)}
+          </span>
+        </div>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <div className="text-sm font-semibold text-green-600">+{activity.amount} USDC</div>
+        {activity.penaltyPaid ? (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">5% penalty</span>
+        ) : (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">released</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function History() {
   const { transactions, refreshTransactions, isRefreshing } = useWallet()
+  const { vaults } = useVault()
+
+  // Merge on-chain transactions and vault events, sorted newest first
+  const txActivities: Activity[] = transactions.map((tx) => ({ kind: 'tx', data: tx }))
+  const vaultActivities = buildVaultActivities(vaults)
+
+  const all: Activity[] = [...txActivities, ...vaultActivities].sort((a, b) => {
+    const tsA = a.kind === 'tx' ? a.data.timestamp : a.timestamp
+    const tsB = b.kind === 'tx' ? b.data.timestamp : b.timestamp
+    return tsB - tsA
+  })
 
   return (
     <div className="max-w-2xl px-1">
@@ -25,72 +172,21 @@ export default function History() {
         </button>
       </div>
 
-      {transactions.length === 0 ? (
+      {all.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 py-16 flex flex-col items-center gap-3">
           <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
             <ArrowUpRight size={20} className="text-slate-400" />
           </div>
-          <p className="text-slate-500 text-sm">No transactions yet</p>
-          <p className="text-slate-400 text-xs">Your transfers will appear here</p>
+          <p className="text-slate-500 text-sm">No activity yet</p>
+          <p className="text-slate-400 text-xs">Your transfers and vault activity will appear here</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-100 divide-y divide-slate-50 overflow-hidden">
-          {transactions.map((tx) => (
-            <a
-              key={tx.hash}
-              href={`${EXPLORER_BASE}/tx/${tx.hash}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors group"
-            >
-              {/* Direction icon */}
-              <div
-                className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  tx.direction === 'received'
-                    ? 'bg-green-50 text-green-600'
-                    : 'bg-red-50 text-red-500'
-                }`}
-              >
-                {tx.direction === 'received' ? (
-                  <ArrowDownLeft size={16} />
-                ) : (
-                  <ArrowUpRight size={16} />
-                )}
-              </div>
-
-              {/* Address */}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-slate-800 font-mono">
-                  {tx.direction === 'received'
-                    ? truncateAddress(tx.from)
-                    : truncateAddress(tx.to)}
-                </div>
-                <div className="text-xs text-slate-400 mt-0.5">{relativeTime(tx.timestamp)}</div>
-              </div>
-
-              {/* Amount */}
-              <div className="text-right flex-shrink-0">
-                <div
-                  className={`text-sm font-semibold ${
-                    tx.direction === 'received' ? 'text-green-600' : 'text-red-500'
-                  }`}
-                >
-                  {tx.direction === 'received' ? '+' : '-'}
-                  {tx.amount} USDC
-                </div>
-                <span
-                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${STATUS_COLORS[tx.status]}`}
-                >
-                  {tx.status}
-                </span>
-              </div>
-
-              <ExternalLink
-                size={13}
-                className="text-slate-300 group-hover:text-slate-400 flex-shrink-0 transition-colors"
-              />
-            </a>
-          ))}
+          {all.map((activity) => {
+            if (activity.kind === 'tx') return <TxRow key={activity.data.hash} tx={activity.data} />
+            if (activity.kind === 'vault_lock') return <VaultLockRow key={activity.id} activity={activity} />
+            return <VaultReleaseRow key={activity.id} activity={activity} />
+          })}
         </div>
       )}
     </div>
