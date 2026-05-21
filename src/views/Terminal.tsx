@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useWallet, relativeTime } from '../context/WalletContext'
 import { truncateAddress } from '../lib/arcConfig'
 import { streamClaude } from '../lib/claudeApi'
+import { useVault } from '../hooks/useVault'
 
 interface TerminalLine {
   id: string
@@ -20,6 +21,7 @@ const HELP_TEXT = `Available commands:
   balance                           Show USDC balance
   receive / my address              Show your wallet address
   history / show history            Last 5 transactions
+  vault / my vaults                 Show vault summary
   help                              Show this help
   clear                             Clear terminal
 
@@ -30,6 +32,7 @@ type ParsedCommand =
   | { type: 'balance' }
   | { type: 'receive' }
   | { type: 'history' }
+  | { type: 'vault' }
   | { type: 'help' }
   | { type: 'clear' }
   | { type: 'unknown' }
@@ -50,6 +53,7 @@ function parseCommand(input: string): ParsedCommand {
   if (lower === 'balance' || lower === 'check balance') return { type: 'balance' }
   if (lower === 'receive' || lower === 'my address') return { type: 'receive' }
   if (lower === 'history' || lower === 'show history') return { type: 'history' }
+  if (lower === 'vault' || lower === 'my vaults' || lower === 'vaults') return { type: 'vault' }
   if (lower === 'help') return { type: 'help' }
   if (lower === 'clear') return { type: 'clear' }
 
@@ -58,6 +62,7 @@ function parseCommand(input: string): ParsedCommand {
 
 export default function Terminal() {
   const { connectedAddress, usdcBalance, transactions, setCurrentView, setDashboardTab, setSendPreset } = useWallet()
+  const { vaults } = useVault()
 
   const [lines, setLines] = useState<TerminalLine[]>([
     {
@@ -149,6 +154,23 @@ export default function Terminal() {
         return
       }
 
+      case 'vault': {
+        const active = vaults.filter((v) => !['withdrawn', 'broken_early'].includes(v.status))
+        const totalLocked = active.reduce((sum, v) => sum + parseFloat(v.amount), 0)
+        if (active.length === 0) {
+          appendLine('No active vaults. Go to the Vault tab to create one.', 'assistant')
+          return
+        }
+        appendLine(`${active.length} active vault${active.length !== 1 ? 's' : ''} · ${totalLocked.toFixed(2)} USDC locked`, 'assistant')
+        for (const vault of active) {
+          const daysLeft = Math.max(0, Math.ceil((new Date(vault.unlockDate).getTime() - Date.now()) / 86_400_000))
+          const label = vault.name ?? 'Unnamed vault'
+          const unlockStr = new Date(vault.unlockDate).toLocaleDateString()
+          appendLine(`  ${label}  |  ${vault.amount} USDC  |  ${daysLeft}d left  |  unlocks ${unlockStr}  |  ${vault.status}`, 'assistant')
+        }
+        return
+      }
+
       case 'help':
         for (const line of HELP_TEXT.split('\n')) {
           appendLine(line, 'system')
@@ -182,7 +204,7 @@ export default function Terminal() {
               } catch { /* ignore */ }
             })
           )
-          for await (const chunk of streamClaude(raw, connectedAddress ?? '', usdcBalance, transactions, addressBook)) {
+          for await (const chunk of streamClaude(raw, connectedAddress ?? '', usdcBalance, transactions, addressBook, vaults)) {
             accumulated += chunk
             updateLastAssistantLine(accumulated)
           }

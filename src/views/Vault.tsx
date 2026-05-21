@@ -11,8 +11,8 @@ export default function VaultView() {
     return (
       <CreateVault
         onBack={() => setCreating(false)}
-        onCreate={async (amount, unlockDate) => {
-          await createVault(amount, unlockDate)
+        onCreate={async (amount, unlockDate, name) => {
+          await createVault(amount, unlockDate, name)
           setCreating(false)
           refetch()
         }}

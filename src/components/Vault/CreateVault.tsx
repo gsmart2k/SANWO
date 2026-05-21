@@ -4,7 +4,7 @@ import { useWallet } from '../../context/WalletContext'
 
 interface Props {
   onBack: () => void
-  onCreate: (amount: string, unlockDate: Date) => Promise<void>
+  onCreate: (amount: string, unlockDate: Date, name?: string) => Promise<void>
 }
 
 const DURATIONS = [
@@ -25,6 +25,7 @@ function toInputDate(d: Date): string {
 
 export default function CreateVault({ onBack, onCreate }: Props) {
   const { usdcBalance } = useWallet()
+  const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [selectedDays, setSelectedDays] = useState<number | null>(30)
   const [customDate, setCustomDate] = useState('')
@@ -47,7 +48,7 @@ export default function CreateVault({ onBack, onCreate }: Props) {
 
     setLoading(true)
     try {
-      await onCreate(amount, unlockDate)
+      await onCreate(amount, unlockDate, name.trim() || undefined)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create vault')
       setLoading(false)
@@ -80,6 +81,21 @@ export default function CreateVault({ onBack, onCreate }: Props) {
         <p className="text-slate-400 text-sm mb-6">Lock USDC until your chosen date</p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Name */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-5">
+            <label className="text-sm font-semibold text-slate-700 block mb-2">
+              Vault Name <span className="text-slate-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              maxLength={40}
+              placeholder="e.g. Emergency fund, Holiday savings…"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-transparent text-slate-900 placeholder-slate-300 outline-none text-sm"
+            />
+          </div>
+
           {/* Amount */}
           <div className="bg-white rounded-2xl border border-slate-100 p-5">
             <label className="text-sm font-semibold text-slate-700 block mb-2">Amount (USDC)</label>

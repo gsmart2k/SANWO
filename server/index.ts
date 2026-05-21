@@ -63,6 +63,7 @@ interface VaultRecord {
   penaltyPaid: boolean
   withdrawnAt?: string
   amountReturned?: string
+  name?: string
 }
 
 interface VaultsDB {
@@ -630,8 +631,8 @@ app.get('/api/deposit/verify', async (req, res) => {
  */
 app.post('/api/vault/create', async (req, res) => {
   const userToken = req.headers['x-user-token'] as string
-  const { userId, userWalletId, userAddress, amount, unlockDate } = req.body as {
-    userId: string; userWalletId: string; userAddress: string; amount: string; unlockDate: string
+  const { userId, userWalletId, userAddress, amount, unlockDate, name } = req.body as {
+    userId: string; userWalletId: string; userAddress: string; amount: string; unlockDate: string; name?: string
   }
 
   if (!userId || !userWalletId || !userAddress || !amount || !unlockDate) {
@@ -683,6 +684,7 @@ app.post('/api/vault/create', async (req, res) => {
       unlockDate: unlockDateObj.toISOString(),
       status: 'pending',
       penaltyPaid: false,
+      name: name?.trim() || undefined,
     }
     vaultsDB.vaults.push(vault)
     saveVaultsDB()

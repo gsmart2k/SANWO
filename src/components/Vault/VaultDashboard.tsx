@@ -160,6 +160,9 @@ export default function VaultDashboard({ vaults, loading, error, onCreateNew, on
                     <div key={vault.id} className="bg-white rounded-2xl border border-slate-100 p-5">
                       <div className="flex items-start justify-between mb-3">
                         <div>
+                          {vault.name && (
+                            <div className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1">{vault.name}</div>
+                          )}
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-2xl font-bold text-slate-900">{vault.amount}</span>
                             <span className="text-slate-500 font-medium">USDC</span>
@@ -223,6 +226,7 @@ export default function VaultDashboard({ vaults, loading, error, onCreateNew, on
                       className="bg-slate-50 rounded-xl border border-slate-100 px-4 py-3 flex items-center justify-between"
                     >
                       <div>
+                        {vault.name && <div className="text-xs font-semibold text-slate-500 mb-0.5">{vault.name}</div>}
                         <span className="text-slate-700 font-medium text-sm">{vault.amount} USDC</span>
                         <div className="text-slate-400 text-xs mt-0.5">
                           {new Date(vault.lockDate).toLocaleDateString()} →{' '}

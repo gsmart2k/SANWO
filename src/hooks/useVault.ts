@@ -16,6 +16,7 @@ export interface Vault {
   penaltyPaid: boolean
   withdrawnAt?: string
   amountReturned?: string
+  name?: string
 }
 
 export function useVault() {
@@ -45,7 +46,7 @@ export function useVault() {
   }, [fetchVaults])
 
   const createVault = useCallback(
-    async (amount: string, unlockDate: Date): Promise<Vault> => {
+    async (amount: string, unlockDate: Date, name?: string): Promise<Vault> => {
       if (!walletId || !userToken || !connectedAddress) throw new Error('Not authenticated')
 
       const res = await fetch('/api/vault/create', {
@@ -57,6 +58,7 @@ export function useVault() {
           userAddress: connectedAddress,
           amount,
           unlockDate: unlockDate.toISOString(),
+          name: name?.trim() || undefined,
         }),
       })
 
