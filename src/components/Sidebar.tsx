@@ -16,15 +16,9 @@ export default function Sidebar() {
       {/* Brand */}
       <div className="px-5 py-6 border-b border-slate-800">
         <div className="flex items-center gap-3 mb-2">
-          <div
-            className="w-10 h-10 rounded-xl bg-white flex-shrink-0"
-            style={{
-              backgroundImage: "url('/sanwo-logo.png')",
-              backgroundSize: '260% auto',
-              backgroundPosition: 'left center',
-              backgroundRepeat: 'no-repeat',
-            }}
-          />
+          <div className="w-10 h-10 rounded-xl bg-white flex-shrink-0 flex items-center justify-center p-1">
+            <img src="/sanwo-logo.png" alt="SANWO" className="w-full h-full object-contain" />
+          </div>
           <div>
             <div className="text-white font-bold text-base leading-none">SANWO</div>
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 mt-0.5">
