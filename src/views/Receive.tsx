@@ -19,10 +19,10 @@ export default function Receive() {
   }
 
   return (
-    <div className="max-w-md">
+    <div className="max-w-md px-1">
       <h2 className="text-xl font-semibold text-slate-900 mb-6">Receive USDC</h2>
 
-      <div className="bg-white rounded-2xl border border-slate-100 p-8 flex flex-col items-center gap-6">
+      <div className="bg-white rounded-2xl border border-slate-100 p-5 sm:p-8 flex flex-col items-center gap-6">
         {/* QR Code */}
         <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
           <QRCodeSVG

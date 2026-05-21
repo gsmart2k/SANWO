@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import 'dotenv/config'
+import cron from 'node-cron'
 
 // ─── Persistence helpers ──────────────────────────────────────────────────────
 
@@ -42,6 +43,35 @@ const paystackAccounts: Record<string, PaystackAccount> = loadJSON(PAYSTACK_ACCO
 function savePaystackAccount(email: string, account: PaystackAccount) {
   paystackAccounts[email.toLowerCase()] = account
   saveJSON(PAYSTACK_ACCOUNTS_PATH, paystackAccounts)
+}
+
+// ─── Vault persistence ────────────────────────────────────────────────────────
+
+const VAULTS_PATH = join(__dir, 'vaults.json')
+
+interface VaultRecord {
+  id: string
+  userId: string
+  userWalletId: string
+  userAddress: string
+  vaultWalletId: string
+  vaultAddress: string
+  amount: string
+  lockDate: string
+  unlockDate: string
+  status: 'active' | 'unlocked' | 'withdrawn' | 'broken_early' | 'pending'
+  penaltyPaid: boolean
+}
+
+interface VaultsDB {
+  walletSetId: string | null
+  vaults: VaultRecord[]
+}
+
+let vaultsDB: VaultsDB = loadJSON<VaultsDB>(VAULTS_PATH, { walletSetId: null, vaults: [] })
+
+function saveVaultsDB() {
+  saveJSON(VAULTS_PATH, vaultsDB)
 }
 
 // ─── App setup ────────────────────────────────────────────────────────────────
@@ -181,6 +211,65 @@ async function sendFromTreasury(toAddress: string, usdcAmount: string): Promise<
   )
 
   return (res as { id?: string }).id ?? 'submitted'
+}
+
+// ─── Vault wallet helpers ─────────────────────────────────────────────────────
+
+async function getOrCreateVaultWalletSetId(): Promise<string> {
+  if (vaultsDB.walletSetId) return vaultsDB.walletSetId
+
+  const entitySecretCiphertext = await getEntitySecretCiphertext()
+  const wsRes = await circle<{ walletSet: { id: string } }>(
+    'POST',
+    '/v1/w3s/developer/walletSets',
+    { idempotencyKey: randomUUID(), entitySecretCiphertext, name: 'SANWO Vault Wallets' }
+  )
+  vaultsDB.walletSetId = wsRes.data.walletSet.id
+  saveVaultsDB()
+  return vaultsDB.walletSetId
+}
+
+async function createVaultWallet(_userId: string): Promise<{ walletId: string; address: string }> {
+  const [walletSetId, entitySecretCiphertext] = await Promise.all([
+    getOrCreateVaultWalletSetId(),
+    getEntitySecretCiphertext(),
+  ])
+
+  const res = await circle<{ wallets: Array<{ id: string; address: string }> }>(
+    'POST',
+    '/v1/w3s/developer/wallets',
+    {
+      idempotencyKey: randomUUID(),
+      entitySecretCiphertext,
+      walletSetId,
+      blockchains: ['ARC-TESTNET'],
+      count: 1,
+    }
+  )
+
+  const wallet = res.data.wallets[0]
+  return { walletId: wallet.id, address: wallet.address }
+}
+
+async function transferFromVault(vaultWalletId: string, toAddress: string, amount: string): Promise<string> {
+  const entitySecretCiphertext = await getEntitySecretCiphertext()
+
+  const res = await circle<{ id?: string }>(
+    'POST',
+    '/v1/w3s/developer/transactions/transfer',
+    {
+      idempotencyKey: randomUUID(),
+      entitySecretCiphertext,
+      walletId: vaultWalletId,
+      destinationAddress: toAddress,
+      amounts: [amount],
+      tokenAddress: '0x3600000000000000000000000000000000000000',
+      blockchain: 'ARC-TESTNET',
+      feeLevel: 'MEDIUM',
+    }
+  )
+
+  return res.data.id ?? 'submitted'
 }
 
 // ─── NGN/USDC rate ────────────────────────────────────────────────────────────
@@ -571,6 +660,166 @@ app.get('/api/deposit/verify', async (req, res) => {
       : msg
     res.status(500).json({ error: friendly })
   }
+})
+
+// ─── Vault routes ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/vault/create
+ * Creates a vault wallet, initiates transfer challenge, saves pending vault record.
+ * Body: { userId, userWalletId, userAddress, amount, unlockDate }
+ */
+app.post('/api/vault/create', async (req, res) => {
+  const userToken = req.headers['x-user-token'] as string
+  const { userId, userWalletId, userAddress, amount, unlockDate } = req.body as {
+    userId: string; userWalletId: string; userAddress: string; amount: string; unlockDate: string
+  }
+
+  if (!userId || !userWalletId || !userAddress || !amount || !unlockDate) {
+    return res.status(400).json({ error: 'userId, userWalletId, userAddress, amount, and unlockDate are required' })
+  }
+
+  const amountNum = parseFloat(amount)
+  if (isNaN(amountNum) || amountNum <= 0) {
+    return res.status(400).json({ error: 'amount must be greater than 0' })
+  }
+
+  const unlockDateObj = new Date(unlockDate)
+  const minDate = new Date()
+  minDate.setDate(minDate.getDate() + 7)
+  if (unlockDateObj < minDate) {
+    return res.status(400).json({ error: 'Unlock date must be at least 7 days from now' })
+  }
+
+  try {
+    // 1. Create vault developer-controlled wallet
+    const vaultWallet = await createVaultWallet(userId)
+
+    // 2. Create transfer challenge (user wallet → vault wallet); requires user PIN
+    const transferRes = await circle<{ challengeId: string }>(
+      'POST',
+      '/v1/w3s/user/transactions/transfer',
+      {
+        idempotencyKey: randomUUID(),
+        walletId: userWalletId,
+        destinationAddress: vaultWallet.address,
+        amounts: [amount],
+        tokenAddress: '0x3600000000000000000000000000000000000000',
+        blockchain: 'ARC-TESTNET',
+        feeLevel: 'MEDIUM',
+      },
+      userToken
+    )
+
+    // 3. Only save to DB after both Circle calls succeed (rollback on failure)
+    const vault: VaultRecord = {
+      id: randomUUID(),
+      userId,
+      userWalletId,
+      userAddress,
+      vaultWalletId: vaultWallet.walletId,
+      vaultAddress: vaultWallet.address,
+      amount,
+      lockDate: new Date().toISOString(),
+      unlockDate: unlockDateObj.toISOString(),
+      status: 'pending',
+      penaltyPaid: false,
+    }
+    vaultsDB.vaults.push(vault)
+    saveVaultsDB()
+
+    res.json({ vault, challengeId: transferRes.data.challengeId })
+  } catch (err) {
+    console.error('/api/vault/create error:', err)
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+  }
+})
+
+/**
+ * POST /api/vault/activate/:vaultId
+ * Called after user completes PIN challenge — marks vault as active.
+ */
+app.post('/api/vault/activate/:vaultId', (req, res) => {
+  const vault = vaultsDB.vaults.find((v) => v.id === req.params.vaultId)
+  if (!vault) return res.status(404).json({ error: 'Vault not found' })
+  if (vault.status !== 'pending') return res.status(400).json({ error: 'Vault is not in pending state' })
+
+  vault.status = 'active'
+  saveVaultsDB()
+  res.json({ vault })
+})
+
+/**
+ * GET /api/vault/:userId
+ * Returns all vaults for a user, auto-updating status to "unlocked" when due.
+ */
+app.get('/api/vault/:userId', (req, res) => {
+  const userVaults = vaultsDB.vaults.filter((v) => v.userId === req.params.userId)
+  const now = new Date()
+  let changed = false
+  for (const v of userVaults) {
+    if (v.status === 'active' && new Date(v.unlockDate) <= now) {
+      v.status = 'unlocked'
+      changed = true
+    }
+  }
+  if (changed) saveVaultsDB()
+  res.json({ vaults: userVaults })
+})
+
+/**
+ * POST /api/vault/withdraw/:vaultId
+ * Withdraws from vault. Full amount if unlocked; 5% penalty if early.
+ * Uses developer-controlled transfer — no user PIN needed.
+ */
+app.post('/api/vault/withdraw/:vaultId', async (req, res) => {
+  const vault = vaultsDB.vaults.find((v) => v.id === req.params.vaultId)
+  if (!vault) return res.status(404).json({ error: 'Vault not found' })
+  if (vault.status === 'withdrawn' || vault.status === 'broken_early') {
+    return res.status(400).json({ error: 'Vault already withdrawn' })
+  }
+  if (vault.status === 'pending') {
+    return res.status(400).json({ error: 'Vault deposit is still pending confirmation' })
+  }
+
+  const penaltyRate = parseFloat(process.env.PENALTY_RATE ?? '0.05')
+  const isEarly = new Date() < new Date(vault.unlockDate)
+  const total = parseFloat(vault.amount)
+  const penalty = isEarly ? parseFloat((total * penaltyRate).toFixed(6)) : 0
+  const returning = parseFloat((total - penalty).toFixed(6))
+
+  try {
+    await transferFromVault(vault.vaultWalletId, vault.userAddress, returning.toString())
+    vault.status = isEarly ? 'broken_early' : 'withdrawn'
+    vault.penaltyPaid = isEarly
+    saveVaultsDB()
+
+    res.json({
+      amountReturned: returning.toFixed(2),
+      penaltyDeducted: penalty.toFixed(2),
+      isEarly,
+    })
+  } catch (err) {
+    console.error('/api/vault/withdraw error:', err)
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+  }
+})
+
+// ─── Daily cron: unlock matured vaults ───────────────────────────────────────
+
+cron.schedule('0 0 * * *', () => {
+  const now = new Date()
+  let count = 0
+  for (const vault of vaultsDB.vaults) {
+    if (vault.status === 'active' && new Date(vault.unlockDate) <= now) {
+      vault.status = 'unlocked'
+      count++
+      console.log(`[Vault Cron] Vault ${vault.id} (user: ${vault.userId}) is now unlocked`)
+      // TODO: push notification to user
+    }
+  }
+  if (count > 0) saveVaultsDB()
+  console.log(`[Vault Cron] ${count} vault(s) unlocked`)
 })
 
 // ─── Start ────────────────────────────────────────────────────────────────────

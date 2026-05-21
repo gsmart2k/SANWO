@@ -74,7 +74,7 @@ function QuickActions({ onSelect }: { onSelect: (tab: Tab) => void }) {
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {actions.map(({ id, label, icon: Icon, color }) => (
         <button
           key={id}
@@ -99,7 +99,7 @@ export default function Dashboard() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-6 py-8">
+      <div className="max-w-2xl mx-auto px-4 py-6 md:px-6 md:py-8">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>

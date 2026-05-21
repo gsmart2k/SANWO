@@ -8,6 +8,7 @@ dist
 # Server runtime data
 server/registry.json
 server/paystack_accounts.json
+server/vaults.json
 
 # One-time setup scripts
 server/setup-treasury.ts

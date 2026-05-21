@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { GoogleLogin } from '@react-oauth/google'
 import { useWallet } from './context/WalletContext'
 import Sidebar from './components/Sidebar'
+import BottomNav from './components/BottomNav'
 import Dashboard from './views/Dashboard'
 import Terminal from './views/Terminal'
+import VaultView from './views/Vault'
 
 function Spinner({ message }: { message: string }) {
   return (
@@ -37,7 +39,7 @@ function LoginScreen() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-10 max-w-md w-full mx-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6 sm:p-10 max-w-md w-full mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <img src="/sanwo-logo.png" alt="SANWO" className="h-14 mb-4 object-contain mx-auto" />
@@ -177,9 +179,12 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
       <Sidebar />
-      <main className="flex-1 overflow-hidden">
-        {currentView === 'dashboard' ? <Dashboard /> : <Terminal />}
-      </main>
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <main className="flex-1 overflow-hidden">
+          {currentView === 'dashboard' ? <Dashboard /> : currentView === 'vault' ? <VaultView /> : <Terminal />}
+        </main>
+        <BottomNav />
+      </div>
     </div>
   )
 }

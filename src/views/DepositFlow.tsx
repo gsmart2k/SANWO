@@ -119,7 +119,7 @@ export default function DepositFlow({ onBack }: { onBack: () => void }) {
   // ── Shared email + rate header ──────────────────────────────────────────────
 
   return (
-    <div className="max-w-lg">
+    <div className="max-w-lg px-1">
       <button
         onClick={onBack}
         className="flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-sm mb-6 transition-colors"

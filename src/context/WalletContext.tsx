@@ -22,7 +22,7 @@ export interface Transaction {
   direction: 'sent' | 'received'
 }
 
-export type AppView = 'dashboard' | 'terminal'
+export type AppView = 'dashboard' | 'terminal' | 'vault'
 export type DashboardTab = 'balance' | 'send' | 'receive' | 'history' | 'deposit'
 
 export interface SendPreset {
@@ -62,6 +62,7 @@ interface WalletContextType {
   setDashboardTab: (t: DashboardTab) => void
   sendPreset: SendPreset | null
   setSendPreset: (p: SendPreset | null) => void
+  userToken: string | null
 }
 
 // ─── Session persistence (sessionStorage) ────────────────────────────────────
@@ -342,7 +343,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) return
     // Re-initialise the Circle SDK so it's ready to sign
-    initCircleSDK(session.userToken, session.encryptionKey).catch(console.error)
+    try { initCircleSDK(session.userToken, session.encryptionKey) } catch (e) { console.error(e) }
   }, [session?.userToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load wallet data when address becomes available ───────────────────────
@@ -382,6 +383,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setDashboardTab,
         sendPreset,
         setSendPreset,
+        userToken: session?.userToken ?? null,
       }}
     >
       {children}

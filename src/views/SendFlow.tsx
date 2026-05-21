@@ -149,7 +149,7 @@ export default function SendFlow({ onBack }: { onBack: () => void }) {
 
   if (step === 'input') {
     return (
-      <div className="max-w-lg">
+      <div className="max-w-lg px-1">
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-sm mb-6 transition-colors"
@@ -238,7 +238,7 @@ export default function SendFlow({ onBack }: { onBack: () => void }) {
 
   if (step === 'confirm') {
     return (
-      <div className="max-w-lg">
+      <div className="max-w-lg px-1">
         <button
           onClick={() => setStep('input')}
           className="flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-sm mb-6 transition-colors"
@@ -307,7 +307,7 @@ export default function SendFlow({ onBack }: { onBack: () => void }) {
   if (!result) return null
 
   return (
-    <div className="max-w-lg">
+    <div className="max-w-lg px-1">
       <div className="flex flex-col items-center py-8 text-center">
         {result.success ? (
           <>
