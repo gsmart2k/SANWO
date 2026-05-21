@@ -214,62 +214,19 @@ async function sendFromTreasury(toAddress: string, usdcAmount: string): Promise<
 }
 
 // ─── Vault wallet helpers ─────────────────────────────────────────────────────
+// Vault funds are custodied in the treasury wallet — no separate wallets needed.
+// Individual vault balances are tracked purely in vaults.json.
 
-async function getOrCreateVaultWalletSetId(): Promise<string> {
-  if (vaultsDB.walletSetId) return vaultsDB.walletSetId
-
-  const entitySecretCiphertext = await getEntitySecretCiphertext()
-  const wsRes = await circle<{ walletSet: { id: string } }>(
-    'POST',
-    '/v1/w3s/developer/walletSets',
-    { idempotencyKey: randomUUID(), entitySecretCiphertext, name: 'SANWO Vault Wallets' }
-  )
-  vaultsDB.walletSetId = wsRes.data.walletSet.id
-  saveVaultsDB()
-  return vaultsDB.walletSetId
+function getVaultCustodian(): { walletId: string; address: string } {
+  const walletId = process.env.CIRCLE_TREASURY_WALLET_ID ?? ''
+  const address = process.env.CIRCLE_TREASURY_ADDRESS ?? ''
+  if (!walletId || !address) throw new Error('Treasury wallet not configured (CIRCLE_TREASURY_WALLET_ID / CIRCLE_TREASURY_ADDRESS)')
+  return { walletId, address }
 }
 
-async function createVaultWallet(_userId: string): Promise<{ walletId: string; address: string }> {
-  const [walletSetId, entitySecretCiphertext] = await Promise.all([
-    getOrCreateVaultWalletSetId(),
-    getEntitySecretCiphertext(),
-  ])
-
-  const res = await circle<{ wallets: Array<{ id: string; address: string }> }>(
-    'POST',
-    '/v1/w3s/developer/wallets',
-    {
-      idempotencyKey: randomUUID(),
-      entitySecretCiphertext,
-      walletSetId,
-      blockchains: ['ARC-TESTNET'],
-      count: 1,
-    }
-  )
-
-  const wallet = res.data.wallets[0]
-  return { walletId: wallet.id, address: wallet.address }
-}
-
-async function transferFromVault(vaultWalletId: string, toAddress: string, amount: string): Promise<string> {
-  const entitySecretCiphertext = await getEntitySecretCiphertext()
-
-  const res = await circle<{ id?: string }>(
-    'POST',
-    '/v1/w3s/developer/transactions/transfer',
-    {
-      idempotencyKey: randomUUID(),
-      entitySecretCiphertext,
-      walletId: vaultWalletId,
-      destinationAddress: toAddress,
-      amounts: [amount],
-      tokenAddress: '0x3600000000000000000000000000000000000000',
-      blockchain: 'ARC-TESTNET',
-      feeLevel: 'MEDIUM',
-    }
-  )
-
-  return res.data.id ?? 'submitted'
+// transferFromVault delegates to the treasury — already proven to work.
+async function transferFromVault(_vaultWalletId: string, toAddress: string, amount: string): Promise<string> {
+  return sendFromTreasury(toAddress, amount)
 }
 
 // ─── NGN/USDC rate ────────────────────────────────────────────────────────────
@@ -692,8 +649,8 @@ app.post('/api/vault/create', async (req, res) => {
   }
 
   try {
-    // 1. Create vault developer-controlled wallet
-    const vaultWallet = await createVaultWallet(userId)
+    // 1. Get vault custodian (treasury wallet holds all vault funds)
+    const vaultWallet = getVaultCustodian()
 
     // 2. Create transfer challenge (user wallet → vault wallet); requires user PIN
     const transferRes = await circle<{ challengeId: string }>(
