@@ -2,15 +2,55 @@ import { useState } from 'react'
 import { ArrowRight, Loader2, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react'
 import { useWallet } from '../context/WalletContext'
 
-const SOURCE_CHAINS = [
-  { id: 'Ethereum_Sepolia', label: 'Ethereum Sepolia' },
-  { id: 'Base_Sepolia', label: 'Base Sepolia' },
-  { id: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia' },
-  { id: 'Avalanche_Fuji', label: 'Avalanche Fuji' },
-  { id: 'Polygon_Amoy_Testnet', label: 'Polygon Amoy' },
-] as const
+interface ChainConfig {
+  id: string
+  label: string
+  chainId: string  // hex
+  chainName: string
+  nativeCurrency: { name: string; symbol: string; decimals: number }
+  rpcUrls: string[]
+  blockExplorerUrls: string[]
+}
 
-type SourceChainId = (typeof SOURCE_CHAINS)[number]['id']
+const SOURCE_CHAINS: ChainConfig[] = [
+  {
+    id: 'Ethereum_Sepolia', label: 'Ethereum Sepolia',
+    chainId: '0xaa36a7', chainName: 'Ethereum Sepolia',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://rpc.sepolia.org'],
+    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+  },
+  {
+    id: 'Base_Sepolia', label: 'Base Sepolia',
+    chainId: '0x14a34', chainName: 'Base Sepolia',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://sepolia.base.org'],
+    blockExplorerUrls: ['https://sepolia-explorer.base.org'],
+  },
+  {
+    id: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia',
+    chainId: '0x66eee', chainName: 'Arbitrum Sepolia',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
+    blockExplorerUrls: ['https://sepolia.arbiscan.io'],
+  },
+  {
+    id: 'Avalanche_Fuji', label: 'Avalanche Fuji',
+    chainId: '0xa869', chainName: 'Avalanche Fuji',
+    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: ['https://api.avax-test.network/ext/bc/C/rpc'],
+    blockExplorerUrls: ['https://testnet.snowtrace.io'],
+  },
+  {
+    id: 'Polygon_Amoy_Testnet', label: 'Polygon Amoy',
+    chainId: '0x13882', chainName: 'Polygon Amoy',
+    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    rpcUrls: ['https://rpc-amoy.polygon.technology'],
+    blockExplorerUrls: ['https://www.oklink.com/amoy'],
+  },
+]
+
+type SourceChainId = ChainConfig['id']
 
 type BridgeStatus =
   | { step: 'idle' }
@@ -32,6 +72,24 @@ export default function BridgeFlow({ onBack }: Props) {
 
   const hasMetaMask = typeof window !== 'undefined' && 'ethereum' in window
 
+  async function ensureChain(provider: any, chain: ChainConfig) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    try {
+      await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chain.chainId }] })
+    } catch {
+      // Chain not added yet — add it first, which also switches
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: chain.chainId,
+          chainName: chain.chainName,
+          nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls,
+          blockExplorerUrls: chain.blockExplorerUrls,
+        }],
+      })
+    }
+  }
+
   async function handleEstimate() {
     if (!amount || parseFloat(amount) <= 0) return
     setStatus({ step: 'estimating' })
@@ -40,11 +98,16 @@ export default function BridgeFlow({ onBack }: Props) {
       const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const adapter = await createViemAdapterFromProvider({ provider: (window as any).ethereum }) as any
+      const provider = (window as any).ethereum
+      await provider.request({ method: 'eth_requestAccounts' })
+      const chain = SOURCE_CHAINS.find(c => c.id === sourceChain)!
+      await ensureChain(provider, chain)
+
+      const adapter = await createViemAdapterFromProvider({ provider }) as any // eslint-disable-line @typescript-eslint/no-explicit-any
       const kit = new BridgeKit()
 
       const estimate = await kit.estimate({
-        from: { adapter, chain: sourceChain },
+        from: { adapter, chain: sourceChain as any }, // eslint-disable-line @typescript-eslint/no-explicit-any
         to: { chain: 'Arc_Testnet', recipientAddress: connectedAddress!, useForwarder: true },
         amount,
       })
@@ -71,6 +134,10 @@ export default function BridgeFlow({ onBack }: Props) {
       const provider = (window as any).ethereum
       await provider.request({ method: 'eth_requestAccounts' })
 
+      setStatus({ step: 'bridging', progress: 'Adding chain to wallet…' })
+      const chain = SOURCE_CHAINS.find(c => c.id === sourceChain)!
+      await ensureChain(provider, chain)
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const adapter = await createViemAdapterFromProvider({ provider }) as any
       const kit = new BridgeKit()
@@ -78,7 +145,7 @@ export default function BridgeFlow({ onBack }: Props) {
       setStatus({ step: 'bridging', progress: 'Please confirm the transaction in your wallet…' })
 
       const result = await kit.bridge({
-        from: { adapter, chain: sourceChain },
+        from: { adapter, chain: sourceChain as any }, // eslint-disable-line @typescript-eslint/no-explicit-any
         to: { chain: 'Arc_Testnet', recipientAddress: connectedAddress!, useForwarder: true },
         amount,
       })
