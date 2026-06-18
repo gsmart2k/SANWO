@@ -19,7 +19,7 @@ const SOURCE_CHAINS: ChainConfig[] = [
     id: 'Ethereum_Sepolia', label: 'Ethereum Sepolia',
     chainId: '0xaa36a7', chainName: 'Ethereum Sepolia',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: ['https://rpc.sepolia.org'],
+    rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://sepolia.drpc.org'],
     blockExplorerUrls: ['https://sepolia.etherscan.io'],
   },
   {
