@@ -7,7 +7,7 @@ const SOURCE_CHAINS = [
   { id: 'Base_Sepolia', label: 'Base Sepolia' },
   { id: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia' },
   { id: 'Avalanche_Fuji', label: 'Avalanche Fuji' },
-  { id: 'Polygon_Amoy', label: 'Polygon Amoy' },
+  { id: 'Polygon_Amoy_Testnet', label: 'Polygon Amoy' },
 ] as const
 
 type SourceChainId = (typeof SOURCE_CHAINS)[number]['id']
@@ -17,7 +17,7 @@ type BridgeStatus =
   | { step: 'estimating' }
   | { step: 'ready'; fee: string }
   | { step: 'bridging'; progress: string }
-  | { step: 'done'; txHash?: string }
+  | { step: 'done'; txHash?: string; explorerUrl?: string }
   | { step: 'error'; message: string }
 
 interface Props {
@@ -39,8 +39,8 @@ export default function BridgeFlow({ onBack }: Props) {
       const { BridgeKit } = await import('@circle-fin/bridge-kit')
       const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
 
-      const provider = (window as any).ethereum
-      const adapter = await createViemAdapterFromProvider({ provider })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adapter = await createViemAdapterFromProvider({ provider: (window as any).ethereum }) as any
       const kit = new BridgeKit()
 
       const estimate = await kit.estimate({
@@ -49,8 +49,13 @@ export default function BridgeFlow({ onBack }: Props) {
         amount,
       })
 
-      const maxFee = estimate?.maxFee ?? '0'
-      setStatus({ step: 'ready', fee: maxFee })
+      // Sum forwarder relay fees (deducted from minted amount)
+      const totalFee = (estimate.fees as Array<{ type: string; amount: string }>)
+        .filter((f) => f.type === 'forwarder')
+        .reduce((sum, f) => sum + parseFloat(f.amount), 0)
+        .toFixed(4)
+
+      setStatus({ step: 'ready', fee: totalFee })
     } catch (err) {
       setStatus({ step: 'error', message: err instanceof Error ? err.message : 'Estimation failed' })
     }
@@ -62,37 +67,33 @@ export default function BridgeFlow({ onBack }: Props) {
       const { BridgeKit } = await import('@circle-fin/bridge-kit')
       const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const provider = (window as any).ethereum
       await provider.request({ method: 'eth_requestAccounts' })
 
-      const adapter = await createViemAdapterFromProvider({ provider })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adapter = await createViemAdapterFromProvider({ provider }) as any
       const kit = new BridgeKit()
 
-      setStatus({ step: 'bridging', progress: 'Initiating bridge — please confirm in your wallet…' })
+      setStatus({ step: 'bridging', progress: 'Please confirm the transaction in your wallet…' })
 
       const result = await kit.bridge({
         from: { adapter, chain: sourceChain },
         to: { chain: 'Arc_Testnet', recipientAddress: connectedAddress!, useForwarder: true },
         amount,
-        options: {
-          onStep: (step: { name: string }) => {
-            const labels: Record<string, string> = {
-              'approve': 'Approving USDC spend…',
-              'burn': 'Burning USDC on source chain…',
-              'attestation': 'Waiting for Circle attestation…',
-              'mint': 'Minting USDC on Arc…',
-            }
-            setStatus({ step: 'bridging', progress: labels[step.name] ?? `Processing: ${step.name}…` })
-          },
-        },
       })
 
       if (result.state === 'error') {
-        throw new Error(result.error?.message ?? 'Bridge failed')
+        const failedStep = result.steps?.find(
+          (s: { state: string; errorMessage?: string }) => s.state === 'error'
+        )
+        throw new Error(failedStep?.errorMessage ?? 'Bridge failed')
       }
 
-      const mintStep = result.steps?.find((s: { name: string }) => s.name === 'mint')
-      setStatus({ step: 'done', txHash: mintStep?.data?.transactionHash })
+      const mintStep = result.steps?.find(
+        (s: { name: string; txHash?: string; explorerUrl?: string }) => s.name.toLowerCase() === 'mint'
+      )
+      setStatus({ step: 'done', txHash: mintStep?.txHash, explorerUrl: mintStep?.explorerUrl })
     } catch (err) {
       setStatus({ step: 'error', message: err instanceof Error ? err.message : 'Bridge failed' })
     }
@@ -109,14 +110,14 @@ export default function BridgeFlow({ onBack }: Props) {
         <p className="text-slate-400 text-xs mb-6">
           It may take a few seconds to appear in your balance.
         </p>
-        {status.txHash && (
+        {(status.explorerUrl || status.txHash) && (
           <a
-            href={`https://testnet.arcscan.app/tx/${status.txHash}`}
+            href={status.explorerUrl ?? `https://testnet.arcscan.app/tx/${status.txHash}`}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-blue-600 text-sm hover:underline mb-6"
           >
-            View on ArcScan <ExternalLink size={13} />
+            View on explorer <ExternalLink size={13} />
           </a>
         )}
         <div className="mt-2">
@@ -200,13 +201,13 @@ export default function BridgeFlow({ onBack }: Props) {
         {status.step === 'ready' && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">Estimated relay fee</span>
+              <span className="text-slate-500">Relay fee</span>
               <span className="font-semibold text-slate-800">{status.fee} USDC</span>
             </div>
             <div className="flex justify-between mt-1">
               <span className="text-slate-500">You receive (approx)</span>
               <span className="font-semibold text-green-700">
-                {(parseFloat(amount) - parseFloat(status.fee || '0')).toFixed(4)} USDC
+                {Math.max(0, parseFloat(amount) - parseFloat(status.fee || '0')).toFixed(4)} USDC
               </span>
             </div>
           </div>

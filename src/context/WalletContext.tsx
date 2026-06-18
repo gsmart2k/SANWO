@@ -23,7 +23,7 @@ export interface Transaction {
 }
 
 export type AppView = 'dashboard' | 'terminal' | 'vault'
-export type DashboardTab = 'balance' | 'send' | 'receive' | 'history' | 'deposit'
+export type DashboardTab = 'balance' | 'send' | 'receive' | 'history' | 'deposit' | 'bridge'
 
 export interface SendPreset {
   to: string
