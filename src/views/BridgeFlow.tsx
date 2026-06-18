@@ -1,0 +1,259 @@
+import { useState } from 'react'
+import { ArrowRight, Loader2, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react'
+import { useWallet } from '../context/WalletContext'
+
+const SOURCE_CHAINS = [
+  { id: 'Ethereum_Sepolia', label: 'Ethereum Sepolia' },
+  { id: 'Base_Sepolia', label: 'Base Sepolia' },
+  { id: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia' },
+  { id: 'Avalanche_Fuji', label: 'Avalanche Fuji' },
+  { id: 'Polygon_Amoy', label: 'Polygon Amoy' },
+] as const
+
+type SourceChainId = (typeof SOURCE_CHAINS)[number]['id']
+
+type BridgeStatus =
+  | { step: 'idle' }
+  | { step: 'estimating' }
+  | { step: 'ready'; fee: string }
+  | { step: 'bridging'; progress: string }
+  | { step: 'done'; txHash?: string }
+  | { step: 'error'; message: string }
+
+interface Props {
+  onBack: () => void
+}
+
+export default function BridgeFlow({ onBack }: Props) {
+  const { connectedAddress } = useWallet()
+  const [sourceChain, setSourceChain] = useState<SourceChainId>('Ethereum_Sepolia')
+  const [amount, setAmount] = useState('')
+  const [status, setStatus] = useState<BridgeStatus>({ step: 'idle' })
+
+  const hasMetaMask = typeof window !== 'undefined' && 'ethereum' in window
+
+  async function handleEstimate() {
+    if (!amount || parseFloat(amount) <= 0) return
+    setStatus({ step: 'estimating' })
+    try {
+      const { BridgeKit } = await import('@circle-fin/bridge-kit')
+      const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
+
+      const provider = (window as any).ethereum
+      const adapter = await createViemAdapterFromProvider({ provider })
+      const kit = new BridgeKit()
+
+      const estimate = await kit.estimate({
+        from: { adapter, chain: sourceChain },
+        to: { chain: 'Arc_Testnet', recipientAddress: connectedAddress!, useForwarder: true },
+        amount,
+      })
+
+      const maxFee = estimate?.maxFee ?? '0'
+      setStatus({ step: 'ready', fee: maxFee })
+    } catch (err) {
+      setStatus({ step: 'error', message: err instanceof Error ? err.message : 'Estimation failed' })
+    }
+  }
+
+  async function handleBridge() {
+    setStatus({ step: 'bridging', progress: 'Requesting wallet connection…' })
+    try {
+      const { BridgeKit } = await import('@circle-fin/bridge-kit')
+      const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
+
+      const provider = (window as any).ethereum
+      await provider.request({ method: 'eth_requestAccounts' })
+
+      const adapter = await createViemAdapterFromProvider({ provider })
+      const kit = new BridgeKit()
+
+      setStatus({ step: 'bridging', progress: 'Initiating bridge — please confirm in your wallet…' })
+
+      const result = await kit.bridge({
+        from: { adapter, chain: sourceChain },
+        to: { chain: 'Arc_Testnet', recipientAddress: connectedAddress!, useForwarder: true },
+        amount,
+        options: {
+          onStep: (step: { name: string }) => {
+            const labels: Record<string, string> = {
+              'approve': 'Approving USDC spend…',
+              'burn': 'Burning USDC on source chain…',
+              'attestation': 'Waiting for Circle attestation…',
+              'mint': 'Minting USDC on Arc…',
+            }
+            setStatus({ step: 'bridging', progress: labels[step.name] ?? `Processing: ${step.name}…` })
+          },
+        },
+      })
+
+      if (result.state === 'error') {
+        throw new Error(result.error?.message ?? 'Bridge failed')
+      }
+
+      const mintStep = result.steps?.find((s: { name: string }) => s.name === 'mint')
+      setStatus({ step: 'done', txHash: mintStep?.data?.transactionHash })
+    } catch (err) {
+      setStatus({ step: 'error', message: err instanceof Error ? err.message : 'Bridge failed' })
+    }
+  }
+
+  if (status.step === 'done') {
+    return (
+      <div className="text-center py-10">
+        <CheckCircle2 size={48} className="text-green-500 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">Bridge complete!</h3>
+        <p className="text-slate-500 text-sm mb-1">
+          {amount} USDC is arriving at your Arc wallet.
+        </p>
+        <p className="text-slate-400 text-xs mb-6">
+          It may take a few seconds to appear in your balance.
+        </p>
+        {status.txHash && (
+          <a
+            href={`https://testnet.arcscan.app/tx/${status.txHash}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-blue-600 text-sm hover:underline mb-6"
+          >
+            View on ArcScan <ExternalLink size={13} />
+          </a>
+        )}
+        <div className="mt-2">
+          <button
+            onClick={onBack}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl px-6 py-2.5 text-sm transition-colors"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        className="text-sm text-slate-500 hover:text-slate-700 mb-5 flex items-center gap-1 transition-colors"
+      >
+        ← Back
+      </button>
+
+      <h2 className="text-xl font-bold text-slate-900 mb-1">Bridge USDC to Arc</h2>
+      <p className="text-slate-400 text-sm mb-6">
+        Move USDC from another testnet chain into your Sanwo wallet via CCTP v2.
+      </p>
+
+      {!hasMetaMask && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 mb-5 flex items-start gap-2">
+          <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
+          <span>No browser wallet detected. Install MetaMask or Coinbase Wallet to bridge from another chain.</span>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {/* Source chain */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5">
+          <label className="text-sm font-semibold text-slate-700 block mb-3">Source chain</label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {SOURCE_CHAINS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => { setSourceChain(id); setStatus({ step: 'idle' }) }}
+                className={`py-2 px-3 rounded-lg text-xs font-medium transition-colors text-left ${
+                  sourceChain === id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Amount */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5">
+          <label className="text-sm font-semibold text-slate-700 block mb-2">Amount (USDC)</label>
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => { setAmount(e.target.value); setStatus({ step: 'idle' }) }}
+            className="w-full text-2xl font-bold text-slate-900 bg-transparent outline-none placeholder-slate-300"
+          />
+        </div>
+
+        {/* Route summary */}
+        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 flex items-center gap-3 text-sm text-slate-600">
+          <span className="font-medium">{SOURCE_CHAINS.find(c => c.id === sourceChain)?.label}</span>
+          <ArrowRight size={16} className="text-slate-400 flex-shrink-0" />
+          <span className="font-medium text-blue-600">Arc Testnet</span>
+          <span className="ml-auto text-xs text-slate-400">via CCTP v2</span>
+        </div>
+
+        {/* Fee estimate */}
+        {status.step === 'ready' && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Estimated relay fee</span>
+              <span className="font-semibold text-slate-800">{status.fee} USDC</span>
+            </div>
+            <div className="flex justify-between mt-1">
+              <span className="text-slate-500">You receive (approx)</span>
+              <span className="font-semibold text-green-700">
+                {(parseFloat(amount) - parseFloat(status.fee || '0')).toFixed(4)} USDC
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {status.step === 'error' && (
+          <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+            <span>{status.message}</span>
+          </div>
+        )}
+
+        {/* Bridging progress */}
+        {status.step === 'bridging' && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+            <Loader2 size={14} className="animate-spin flex-shrink-0" />
+            <span>{status.progress}</span>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          {status.step !== 'ready' && status.step !== 'bridging' && (
+            <button
+              onClick={handleEstimate}
+              disabled={!hasMetaMask || !amount || parseFloat(amount) <= 0 || status.step === 'estimating'}
+              className="flex-1 flex items-center justify-center gap-2 border border-blue-200 text-blue-600 font-medium rounded-xl py-3 text-sm transition-colors hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {status.step === 'estimating' ? <Loader2 size={14} className="animate-spin" /> : null}
+              {status.step === 'estimating' ? 'Estimating…' : 'Estimate fee'}
+            </button>
+          )}
+          <button
+            onClick={handleBridge}
+            disabled={!hasMetaMask || !amount || parseFloat(amount) <= 0 || status.step === 'bridging' || status.step === 'estimating'}
+            className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {status.step === 'bridging' ? <Loader2 size={14} className="animate-spin" /> : null}
+            {status.step === 'bridging' ? 'Bridging…' : 'Bridge USDC'}
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-400 text-center">
+          Powered by Circle CCTP v2 · Fast transfer (~8–20s) via Circle's Orbit relayer
+        </p>
+      </div>
+    </div>
+  )
+}

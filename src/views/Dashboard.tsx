@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { Copy, Check, RefreshCw, Send, QrCode, Clock, Loader2, ArrowDownToLine } from 'lucide-react'
+import { Copy, Check, RefreshCw, Send, QrCode, Clock, Loader2, ArrowDownToLine, ArrowLeftRight } from 'lucide-react'
 import { useWallet } from '../context/WalletContext'
 import { truncateAddress } from '../lib/arcConfig'
 import SendFlow from './SendFlow'
 import Receive from './Receive'
 import History from './History'
 import DepositFlow from './DepositFlow'
+import BridgeFlow from './BridgeFlow'
 
-type Tab = 'balance' | 'send' | 'receive' | 'history' | 'deposit'
+type Tab = 'balance' | 'send' | 'receive' | 'history' | 'deposit' | 'bridge'
 
 function BalanceCard() {
   const { usdcBalance, connectedAddress, refreshBalance, isRefreshing, isLoading } = useWallet()
@@ -70,11 +71,12 @@ function QuickActions({ onSelect }: { onSelect: (tab: Tab) => void }) {
     { id: 'send' as const, label: 'Send', icon: Send, color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
     { id: 'receive' as const, label: 'Receive', icon: QrCode, color: 'bg-green-50 text-green-600 hover:bg-green-100' },
     { id: 'deposit' as const, label: 'Deposit', icon: ArrowDownToLine, color: 'bg-purple-50 text-purple-600 hover:bg-purple-100' },
+    { id: 'bridge' as const, label: 'Bridge', icon: ArrowLeftRight, color: 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100' },
     { id: 'history' as const, label: 'History', icon: Clock, color: 'bg-slate-100 text-slate-600 hover:bg-slate-200' },
   ]
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       {actions.map(({ id, label, icon: Icon, color }) => (
         <button
           key={id}
@@ -149,6 +151,10 @@ export default function Dashboard() {
 
         {tab === 'deposit' && (
           <DepositFlow onBack={() => showTab('balance')} />
+        )}
+
+        {tab === 'bridge' && (
+          <BridgeFlow onBack={() => showTab('balance')} />
         )}
       </div>
     </div>
